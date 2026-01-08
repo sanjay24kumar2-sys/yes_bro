@@ -11,22 +11,19 @@
 <p id="status"></p>
 
 <script>
-const form = document.getElementById("form");
-const status = document.getElementById("status");
-
 form.onsubmit = async e => {
   e.preventDefault();
   const file = apk.files[0];
-  if(!file) return;
+  if (!file) return;
 
   status.innerText = "Signing...";
 
   const fd = new FormData();
   fd.append("apk", file);
 
-  const r = await fetch("/upload", { method:"POST", body: fd });
-  if(!r.ok){
-    status.innerText = "Server error ❌";
+  const r = await fetch("/upload", { method: "POST", body: fd });
+  if (!r.ok) {
+    status.innerText = "Server Error ❌";
     return;
   }
 
