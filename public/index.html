@@ -70,10 +70,6 @@ button:hover {
   font-size: 14px;
   min-height: 20px;
   color: #fff;
-}
-
-/* Chat bubble style */
-#status {
   background: #2e3a59;
   border-radius: 12px;
   padding: 10px 15px;
@@ -110,13 +106,18 @@ let selectedFile = null;
 apkInput.addEventListener("change", () => {
   if (apkInput.files[0]) {
     selectedFile = apkInput.files[0];
-    status.innerText = `📂 Selected: ${selectedFile.name}`;
+    if (!selectedFile.name.endsWith(".apk")) {
+      status.innerText = "⚠️ Only APK files are allowed";
+      selectedFile = null;
+      return;
+    }
+    status.innerText = `📂 Selected: ${selectedFile.name} (${(selectedFile.size/1024/1024).toFixed(2)} MB)`;
   }
 });
 
 signBtn.addEventListener("click", async () => {
   if (!selectedFile) {
-    status.innerText = "⚠️ Please select an APK first";
+    status.innerText = "⚠️ Please select a valid APK first";
     return;
   }
 
@@ -132,7 +133,8 @@ signBtn.addEventListener("click", async () => {
     });
 
     if (!response.ok) {
-      status.innerText = "❌ Server error. Try again later.";
+      const text = await response.text();
+      status.innerText = `❌ Server error: ${text}`;
       return;
     }
 
