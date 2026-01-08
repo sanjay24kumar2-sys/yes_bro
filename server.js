@@ -7,16 +7,16 @@ const path = require("path");
 const app = express();
 
 // Body parser
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
 // Serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-// Multer upload setup (max 50MB)
-const upload = multer({ dest: "uploads_tmp/", limits: { fileSize: 50 * 1024 * 1024 } });
+// Multer setup (max 100MB)
+const upload = multer({ dest: "uploads_tmp/", limits: { fileSize: 100 * 1024 * 1024 } });
 
-// Ensure directories
+// Ensure directories exist
 ["uploads", "uploads_tmp", "output", "keys"].forEach(d => fs.ensureDirSync(d));
 
 // Keystore config
@@ -32,9 +32,9 @@ if (!fs.existsSync(KEYSTORE)) {
   );
 }
 
-// Build-tools & apksigner path
+// Android build-tools path
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
-const APKSIGNER = path.join(BUILD_TOOLS, "apksigner"); // Correct path
+const APKSIGNER = path.join(BUILD_TOOLS, "apksigner"); // executable binary
 
 if (!fs.existsSync(APKSIGNER)) {
   console.error("apksigner not found at", APKSIGNER);
@@ -50,18 +50,19 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const signed = path.join("output", `signed_${id}.apk`);
 
   try {
+    // Move uploaded file
     await fs.move(req.file.path, raw);
 
     console.log("Signing APK...");
-    // Add --min-sdk-version 21 to avoid MinSdkVersionException
     execSync(
-      `java -Xmx512M -jar "${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --min-sdk-version 21 --out "${signed}" "${raw}"`,
+      `"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --min-sdk-version 21 --out "${signed}" "${raw}"`,
       { stdio: "inherit" }
     );
 
     console.log("Verifying APK...");
-    execSync(`java -Xmx512M -jar "${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
+    execSync(`"${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
 
+    // Send signed APK to user
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
       await fs.remove(signed);
