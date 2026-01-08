@@ -1,23 +1,36 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <title>APK V1 Failed Signer</title>
-  <link rel="stylesheet" href="style.css">
-</head>
 <body>
-  <div class="box">
-    <h1>APK V1 Failed Signer</h1>
-    <p>Signs APK with <b>V2/V3 only</b> (V1 = FAILED)</p>
+<h3>APK Signer</h3>
+<form id="form">
+  <input type="file" id="apk" />
+  <button>Sign</button>
+</form>
+<p id="status"></p>
 
-    <form id="form">
-      <input type="file" id="apk" accept=".apk" required>
-      <button type="submit">Upload & Sign</button>
-    </form>
+<script>
+const form = document.getElementById("form");
+const status = document.getElementById("status");
 
-    <div id="status"></div>
-  </div>
+form.onsubmit = async e => {
+  e.preventDefault();
+  const file = apk.files[0];
+  if(!file) return;
 
-  <script src="script.js"></script>
+  status.innerText = "Signing...";
+  const fd = new FormData();
+  fd.append("apk", file);
+
+  const r = await fetch("/upload",{method:"POST",body:fd});
+  const b = await r.blob();
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(b);
+  a.download = "signed.apk";
+  a.click();
+
+  status.innerText = "Done ✔";
+};
+</script>
 </body>
 </html>
