@@ -106,18 +106,13 @@ let selectedFile = null;
 apkInput.addEventListener("change", () => {
   if (apkInput.files[0]) {
     selectedFile = apkInput.files[0];
-    if (!selectedFile.name.endsWith(".apk")) {
-      status.innerText = "⚠️ Only APK files are allowed";
-      selectedFile = null;
-      return;
-    }
-    status.innerText = `📂 Selected: ${selectedFile.name} (${(selectedFile.size/1024/1024).toFixed(2)} MB)`;
+    status.innerText = `📂 Selected: ${selectedFile.name}`;
   }
 });
 
 signBtn.addEventListener("click", async () => {
   if (!selectedFile) {
-    status.innerText = "⚠️ Please select a valid APK first";
+    status.innerText = "⚠️ Please select an APK first";
     return;
   }
 
@@ -127,14 +122,11 @@ signBtn.addEventListener("click", async () => {
   formData.append("apk", selectedFile);
 
   try {
-    const response = await fetch("/upload", {
-      method: "POST",
-      body: formData
-    });
+    const response = await fetch("/upload", { method: "POST", body: formData });
 
     if (!response.ok) {
       const text = await response.text();
-      status.innerText = `❌ Server error: ${text}`;
+      status.innerText = `❌ Error: ${text}`;
       return;
     }
 
