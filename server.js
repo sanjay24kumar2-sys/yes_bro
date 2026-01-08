@@ -7,28 +7,17 @@ const AdmZip = require("adm-zip");
 
 const app = express();
 
-// Body parser
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-
-// Serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-// Multer setup
-const upload = multer({
-  dest: "uploads_tmp/",
-  limits: { fileSize: 20 * 1024 * 1024 },
-});
-
-// Ensure directories exist
+const upload = multer({ dest: "uploads_tmp/", limits: { fileSize: 20 * 1024 * 1024 } });
 ["uploads", "uploads_tmp", "output", "keys"].forEach((d) => fs.ensureDirSync(d));
 
-// Keystore config
 const KEYSTORE = path.resolve(__dirname, "keys/master.jks");
 const PASS = "mypassword";
 const ALIAS = "master";
 
-// Generate keystore if missing
 if (!fs.existsSync(KEYSTORE)) {
   console.log("🔑 Generating keystore...");
   try {
@@ -43,7 +32,6 @@ if (!fs.existsSync(KEYSTORE)) {
   }
 }
 
-// Android build-tools
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
@@ -55,7 +43,6 @@ if (!fs.existsSync(APKSIGNER) || !fs.existsSync(ZIPALIGN)) {
 fs.chmodSync(APKSIGNER, "755");
 fs.chmodSync(ZIPALIGN, "755");
 
-// Upload & sign route
 app.post("/upload", upload.single("apk"), async (req, res) => {
   if (!req.file) return res.status(400).send("⚠️ No APK uploaded");
 
@@ -67,9 +54,8 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   try {
     await fs.move(req.file.path, raw, { overwrite: true });
 
-    let zip;
     let isCorrupt = false;
-
+    let zip;
     try {
       zip = new AdmZip(raw);
       const manifest = zip.getEntry("AndroidManifest.xml");
@@ -78,11 +64,12 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       isCorrupt = true;
     }
 
-    // If corrupted, add dummy AndroidManifest.xml to force signing
     if (isCorrupt) {
-      console.warn("⚠️ APK is corrupted. Adding dummy AndroidManifest.xml for signing.");
-      zip = zip || new AdmZip();
+      console.warn("⚠️ APK corrupted. Rebuilding minimal APK for signing...");
+      zip = new AdmZip();
       zip.addFile("AndroidManifest.xml", Buffer.from('<manifest package="com.temp.app"/>'));
+      zip.addFile("classes.dex", Buffer.from([0x0A])); // dummy dex
+      zip.addFile("resources.arsc", Buffer.from([0x0])); // dummy resources
       zip.writeZip(raw);
     }
 
@@ -114,7 +101,6 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       await fs.remove(aligned);
       await fs.remove(signed);
     });
-
   } catch (err) {
     console.error("❌ SIGNING ERROR:", err.message);
     res.status(500).json({ status: "error", message: "Signing failed. Check server logs." });
