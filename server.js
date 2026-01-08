@@ -2,7 +2,6 @@ const express = require("express");
 const multer = require("multer");
 const { execSync } = require("child_process");
 const fs = require("fs-extra");
-const path = require("path");
 
 const app = express();
 
@@ -15,29 +14,29 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 }
 });
 
-const DIRS = ["uploads", "uploads_tmp", "output", "keys"];
-DIRS.forEach(d => fs.ensureDirSync(d));
+["uploads","uploads_tmp","output","keys"].forEach(d =>
+  fs.ensureDirSync(d)
+);
 
-/* 🔒 FIXED KEYSTORE CONFIG */
+/* 🔐 FIXED KEYSTORE */
 const KEYSTORE = "keys/master.jks";
-const STOREPASS = "mypassword";
+const PASS = "mypassword";
 const ALIAS = "master";
 
-/* 🔑 AUTO CREATE KEYSTORE (IMPORTANT FIX) */
+/* 🔑 AUTO CREATE KEYSTORE */
 if (!fs.existsSync(KEYSTORE)) {
-  console.log("Creating master keystore...");
   execSync(`
     keytool -genkeypair \
-    -keystore "${KEYSTORE}" \
-    -storepass ${STOREPASS} \
-    -keypass ${STOREPASS} \
+    -keystore ${KEYSTORE} \
+    -storepass ${PASS} \
+    -keypass ${PASS} \
     -alias ${ALIAS} \
     -keyalg RSA \
     -keysize 2048 \
     -validity 10000 \
     -storetype PKCS12 \
     -dname "CN=Android,O=Release,C=IN"
-  `, { stdio: "inherit" });
+  `);
 }
 
 const ZIPALIGN = "/opt/android-sdk/build-tools/34.0.0/zipalign";
@@ -47,43 +46,42 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   if (!req.file) return res.status(400).send("No APK");
 
   const id = Date.now();
-  const rawApk = `uploads/${id}.apk`;
-  const alignedApk = `uploads/aligned_${id}.apk`;
-  const signedApk = `output/signed_${id}.apk`;
+  const raw = `uploads/${id}.apk`;
+  const aligned = `uploads/aligned_${id}.apk`;
+  const signed = `output/signed_${id}.apk`;
 
   try {
-    await fs.move(req.file.path, rawApk);
+    await fs.move(req.file.path, raw);
 
     /* 1️⃣ ZIPALIGN */
-    execSync(`${ZIPALIGN} -f 4 "${rawApk}" "${alignedApk}"`, { stdio: "inherit" });
+    execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`);
 
-    /* 2️⃣ SIGN APK (V1 OFF) */
+    /* 2️⃣ SIGN APK (V2 + V3 + V4) */
     execSync(`
       ${APKSIGNER} sign \
-      --ks "${KEYSTORE}" \
-      --ks-key-alias "${ALIAS}" \
-      --ks-pass pass:${STOREPASS} \
-      --key-pass pass:${STOREPASS} \
+      --ks ${KEYSTORE} \
+      --ks-key-alias ${ALIAS} \
+      --ks-pass pass:${PASS} \
+      --key-pass pass:${PASS} \
       --v1-signing-enabled false \
       --v2-signing-enabled true \
       --v3-signing-enabled true \
+      --v4-signing-enabled true \
       --min-sdk-version 21 \
-      --out "${signedApk}" \
-      "${alignedApk}"
-    `, { stdio: "inherit" });
+      --out "${signed}" \
+      "${aligned}"
+    `);
 
-    res.download(signedApk, "signed.apk", async () => {
-      await fs.remove(rawApk);
-      await fs.remove(alignedApk);
-      await fs.remove(signedApk);
-    });
+    /* 3️⃣ VERIFY */
+    execSync(`${APKSIGNER} verify --verbose "${signed}"`);
+
+    res.download(signed, "signed.apk");
 
   } catch (e) {
-    console.error("SIGN ERROR:", e.toString());
+    console.error(e.toString());
     res.status(500).send("Signing failed");
   }
 });
 
-/* ✅ RAILWAY PORT */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server running on", PORT));
