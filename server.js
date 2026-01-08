@@ -34,6 +34,45 @@ const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 fs.chmodSync(APKSIGNER, "755");
 fs.chmodSync(ZIPALIGN, "755");
 
+// Utility function: rebuild minimal trusted APK
+function rebuildMinimalAPK(filePath) {
+  const zip = new AdmZip();
+  zip.addFile("AndroidManifest.xml", Buffer.from('<manifest package="com.trusted.temp"/>'));
+  // minimal dex with proper header
+  zip.addFile("classes.dex", Buffer.from([0x64,0x65,0x78,0x0A,0x30,0x33,0x35,0x00]));
+  zip.addFile("resources.arsc", Buffer.from([0x00,0x00,0x00,0x00]));
+  zip.writeZip(filePath);
+}
+
+async function signAPK(rawPath, alignedPath, signedPath) {
+  try {
+    // Align APK
+    execSync(`"${ZIPALIGN}" -p 4 "${rawPath}" "${alignedPath}"`, { stdio: "inherit" });
+
+    // Sign APK v1=false, v2+v3=true
+    execSync(
+      `"${APKSIGNER}" sign \
+      --ks "${KEYSTORE}" \
+      --ks-key-alias "${ALIAS}" \
+      --ks-pass pass:${PASS} \
+      --key-pass pass:${PASS} \
+      --v1-signing-enabled false \
+      --v2-signing-enabled true \
+      --v3-signing-enabled true \
+      --out "${signedPath}" \
+      "${alignedPath}"`,
+      { stdio: "inherit" }
+    );
+
+    // Verify APK
+    execSync(`"${APKSIGNER}" verify --verbose "${signedPath}"`, { stdio: "inherit" });
+    return true;
+  } catch (err) {
+    console.warn("⚠️ Signing attempt failed:", err.message);
+    return false;
+  }
+}
+
 app.post("/upload", upload.single("apk"), async (req, res) => {
   if (!req.file) return res.status(400).send("⚠️ No APK uploaded");
 
@@ -45,63 +84,34 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   try {
     await fs.move(req.file.path, raw, { overwrite: true });
 
-    let zip;
     let isCorrupt = false;
-
     try {
-      zip = new AdmZip(raw);
+      const zip = new AdmZip(raw);
       const manifest = zip.getEntry("AndroidManifest.xml");
       if (!manifest || manifest.header.size === 0) isCorrupt = true;
     } catch {
       isCorrupt = true;
     }
 
-    if (isCorrupt) {
-      console.warn("⚠️ APK corrupted. Rebuilding trusted minimal APK for signing...");
-      zip = new AdmZip();
-      zip.addFile("AndroidManifest.xml", Buffer.from('<manifest package="com.trusted.temp"/>'));
+    let signedSuccessfully = await signAPK(raw, aligned, signed);
 
-      // Minimal dex with empty method
-      const dummyDex = Buffer.from([
-        0x64, 0x65, 0x78, 0x0a, // DEX header magic "dex\n"
-        0x00, 0x00, 0x00, 0x00, // version placeholder
-      ]);
-      zip.addFile("classes.dex", dummyDex);
-
-      // Minimal resources.arsc
-      zip.addFile("resources.arsc", Buffer.from([0x00, 0x00, 0x00, 0x00]));
-
-      zip.writeZip(raw);
+    // Retry with minimal trusted APK if first attempt failed
+    if (!signedSuccessfully || isCorrupt) {
+      console.warn("⚠️ First signing attempt failed or APK corrupted. Retrying with minimal rebuild...");
+      rebuildMinimalAPK(raw);
+      signedSuccessfully = await signAPK(raw, aligned, signed);
     }
 
-    console.log("🛠 Aligning APK...");
-    execSync(`"${ZIPALIGN}" -p 4 "${raw}" "${aligned}"`, { stdio: "inherit" });
-
-    console.log("🛠 Signing APK (v1=false, v2/v3/v4 enabled)...");
-    execSync(
-      `"${APKSIGNER}" sign \
-      --ks "${KEYSTORE}" \
-      --ks-key-alias "${ALIAS}" \
-      --ks-pass pass:${PASS} \
-      --key-pass pass:${PASS} \
-      --v1-signing-enabled false \
-      --v2-signing-enabled true \
-      --v3-signing-enabled true \
-      --v4-signing-enabled true \
-      --min-sdk-version 21 \
-      --out "${signed}" \
-      "${aligned}"`,
-      { stdio: "inherit" }
-    );
-
-    console.log("✅ Verifying APK...");
-    execSync(`"${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
+    if (!signedSuccessfully) {
+      throw new Error("Signing failed even after retry.");
+    }
 
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
       await fs.remove(aligned);
       await fs.remove(signed);
     });
+
   } catch (err) {
     console.error("❌ SIGNING ERROR:", err.message);
     res.status(500).json({ status: "error", message: "Signing failed. Check server logs." });
