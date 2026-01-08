@@ -83,68 +83,32 @@ button:hover { background: #367fa9; }
 </div>
 
 <script>
-const apkInput = document.getElementById("apk");
-const signBtn = document.getElementById("signBtn");
-const logBox = document.getElementById("logBox");
+const logBox=document.getElementById("logBox");
+function log(msg){ const e=document.createElement("code"); e.innerText=msg;logBox.appendChild(e);logBox.append("\n");}
 
-let selectedFile = null;
+signBtn.onclick=async()=>{
+  if (!selectedFile){ log("Select APK first");return;}
+  log("Uploading...");
+  const fd=new FormData(); fd.append("apk",selectedFile);
 
-function log(msg) {
-  const entry = document.createElement("div");
-  entry.className = "log-entry";
-  entry.innerText = msg;
-  logBox.appendChild(entry);
-  logBox.scrollTop = logBox.scrollHeight;
-}
+  const r=await fetch("/upload",{method:"POST",body:fd});
+  if(!r.ok){ log("Upload failed"); return;}
+  const {jobId}=await r.json();
+  log("Job started "+jobId);
 
-apkInput.addEventListener("change", () => {
-  if (apkInput.files[0]) {
-    selectedFile = apkInput.files[0];
-    log(`📂 Selected file: ${selectedFile.name}`);
-  }
-});
-
-signBtn.addEventListener("click", async () => {
-  if (!selectedFile) {
-    log("⚠️ Please select an APK first");
-    return;
-  }
-  log("⏳ Starting upload...");
-
-  const formData = new FormData();
-  formData.append("apk", selectedFile);
-
-  try {
-    log("📤 Uploading APK to server...");
-    const response = await fetch("/upload", {
-      method: "POST",
-      body: formData
-    });
-
-    if (!response.ok) {
-      let errorText;
-      try {
-        errorText = await response.text();
-      } catch {
-        errorText = response.statusText;
-      }
-      log(`❌ Server error: ${errorText}`);
-      return;
+  const interval=setInterval(async()=>{
+    const st=await fetch(`/status/${jobId}`);
+    const j=await st.json();
+    log(JSON.stringify(j));
+    if (j.status=="done"){
+      clearInterval(interval);
+      log("Done, downloading...");
+      const a=document.createElement("a");
+      a.href=j.download; a.download="signed.apk"; a.click();
     }
-
-    log("⬇️ Server responded. Downloading signed APK...");
-    const blob = await response.blob();
-
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "signed.apk";
-    a.click();
-    log("✅ APK signed and downloaded successfully!");
-
-  } catch (err) {
-    log(`❌ Network or server error: ${err.message}`);
-  }
-});
+    if (j.status=="error"){ clearInterval(interval); log("Error "+j.error);}
+  },1500);
+};
 </script>
 
 </body>
