@@ -6,13 +6,19 @@ const fs = require("fs-extra");
 
 const app = express();
 
-// ✅ multer disk storage fix
+// ✅ multer disk storage
 const upload = multer({
   dest: "uploads_tmp/",
   limits: { fileSize: 100 * 1024 * 1024 }
 });
 
 app.use(express.static("public"));
+
+// debug folder check
+console.log("Uploads tmp exists:", fs.existsSync("uploads_tmp"));
+console.log("Uploads folder exists:", fs.existsSync("uploads"));
+console.log("Output folder exists:", fs.existsSync("output"));
+console.log("Keys folder exists:", fs.existsSync("keys"));
 
 app.post("/upload", upload.single("apk"), async (req, res) => {
   if (!req.file || !req.file.path) return res.status(400).send("No APK uploaded");
@@ -27,10 +33,9 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const alias = "alias";
 
   try {
-    // move from multer tmp folder to permanent uploads folder
     await fs.move(req.file.path, apkPath);
 
-    // 🔑 generate random keystore
+    // 🔑 random keystore
     execSync(`
 keytool -genkeypair \
 -keystore ${keystore} \
@@ -57,7 +62,6 @@ apksigner sign \
 ${apkPath}
     `);
 
-    // send APK download
     res.download(signedApk, "signed.apk", () => {
       fs.remove(apkPath);
       fs.remove(keystore);
