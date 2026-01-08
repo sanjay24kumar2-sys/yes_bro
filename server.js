@@ -6,7 +6,7 @@ const path = require("path");
 
 const app = express();
 
-// Reduce max request body to 20MB
+// Max upload 20MB
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(express.static("public"));
@@ -14,15 +14,13 @@ app.use(express.static("public"));
 // Multer config
 const upload = multer({
   dest: "uploads_tmp/",
-  limits: { fileSize: 20 * 1024 * 1024 } // 20 MB max
+  limits: { fileSize: 20 * 1024 * 1024 }
 });
 
-// Ensure folders exist
-["uploads","uploads_tmp","output","keys"].forEach(d =>
-  fs.ensureDirSync(d)
-);
+// Ensure folders
+["uploads","uploads_tmp","output","keys"].forEach(d => fs.ensureDirSync(d));
 
-// 🔑 Fixed Keystore
+// Keystore config
 const KEYSTORE = path.resolve("keys/master.jks");
 const PASS = "mypassword";
 const ALIAS = "master";
@@ -36,12 +34,20 @@ if (!fs.existsSync(KEYSTORE)) {
   );
 }
 
-// Absolute paths to build-tools
+// Absolute paths to zipalign & apksigner
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 
-// Upload & sign
+// Ensure build-tools exist and executable
+if (!fs.existsSync(ZIPALIGN) || !fs.existsSync(APKSIGNER)) {
+  console.error("ERROR: zipalign or apksigner not found. Check build-tools installation.");
+  process.exit(1);
+}
+fs.chmodSync(ZIPALIGN, 0o755);
+fs.chmodSync(APKSIGNER, 0o755);
+
+// Upload & Sign Endpoint
 app.post("/upload", upload.single("apk"), async (req, res) => {
   if (!req.file) return res.status(400).send("No APK uploaded");
 
@@ -51,19 +57,18 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const signed = path.join("output", `signed_${id}.apk`);
 
   try {
-    // Move uploaded file
     await fs.move(req.file.path, raw);
 
-    // ✅ Zipalign
+    console.log("Running zipalign...");
     execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`, { stdio: "inherit" });
 
-    // ✅ Sign APK (V2 + V3 + V4)
+    console.log("Signing APK (V2+V3+V4)...");
     execSync(
-      `${APKSIGNER} sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --min-sdk-version 21 --out "${signed}" "${aligned}"`,
+      `${APKSIGNER} sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --out "${signed}" "${aligned}"`,
       { stdio: "inherit" }
     );
 
-    // ✅ Verify APK
+    console.log("Verifying APK...");
     execSync(`${APKSIGNER} verify --verbose "${signed}"`, { stdio: "inherit" });
 
     res.download(signed, "signed.apk", async () => {
@@ -72,8 +77,8 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       await fs.remove(signed);
     });
 
-  } catch (e) {
-    console.error("SIGNING ERROR:", e.toString());
+  } catch (err) {
+    console.error("SIGNING ERROR:", err.toString());
     res.status(500).send("Signing failed. Check server logs.");
   }
 });
