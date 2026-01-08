@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const multer = require("multer");
 const { execSync } = require("child_process");
@@ -8,10 +7,9 @@ const path = require("path");
 
 const app = express();
 
-// Multer storage for temporary uploads
 const upload = multer({
   dest: "uploads_tmp/",
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB limit
 });
 
 app.use(express.static("public"));
@@ -21,9 +19,8 @@ app.use(express.static("public"));
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-console.log("✅ All required folders are ready");
+console.log("All required folders are ready");
 
-// POST /upload endpoint
 app.post("/upload", upload.single("apk"), async (req, res) => {
   if (!req.file || !req.file.path) return res.status(400).send("❌ No APK uploaded");
 
@@ -32,46 +29,46 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const signedApk = path.join("output", `signed_${id}.apk`);
   const keystore = path.join("keys", `${id}.jks`);
 
-  // For PKCS12, storePass and keyPass must be the same
   const storePass = uuidv4();
   const keyPass = storePass;
   const alias = "alias";
 
   try {
-    // Move the uploaded APK to permanent folder
+    // Move uploaded file to final uploads directory
     await fs.move(req.file.path, apkPath);
 
-    // Generate random keystore (PKCS12)
+    // Generate keystore
     execSync(`
-keytool -genkeypair \
--keystore "${keystore}" \
--storepass "${storePass}" \
--keypass "${keyPass}" \
--alias "${alias}" \
--keyalg RSA \
--keysize 2048 \
--validity 1000 \
--storetype PKCS12 \
--dname "CN=RandomSigner,O=Test,C=IN"
+      keytool -genkeypair \
+      -keystore "${keystore}" \
+      -storepass "${storePass}" \
+      -keypass "${keyPass}" \
+      -alias "${alias}" \
+      -keyalg RSA \
+      -keysize 2048 \
+      -validity 1000 \
+      -storetype PKCS12 \
+      -dname "CN=RandomSigner,O=Test,C=IN"
     `, { stdio: "inherit" });
 
-    // Sign APK (V2 & V3 enabled, V1 disabled)
+    // Sign the APK with min-sdk-version added to fix the error
     execSync(`
-apksigner sign \
---ks "${keystore}" \
---ks-key-alias "${alias}" \
---ks-pass pass:${storePass} \
---key-pass pass:${keyPass} \
---v1-signing-enabled false \
---v2-signing-enabled true \
---v3-signing-enabled true \
---out "${signedApk}" \
-"${apkPath}"
+      apksigner sign \
+      --ks "${keystore}" \
+      --ks-key-alias "${alias}" \
+      --ks-pass pass:${storePass} \
+      --key-pass pass:${keyPass} \
+      --v1-signing-enabled false \
+      --v2-signing-enabled true \
+      --v3-signing-enabled true \
+      --min-sdk-version 21 \
+      --out "${signedApk}" \
+      "${apkPath}"
     `, { stdio: "inherit" });
 
-    // Send signed APK to client
+    // Send the signed APK for download
     res.download(signedApk, "signed.apk", async (err) => {
-      // Clean up temporary files
+      // Cleanup all files
       await fs.remove(apkPath);
       await fs.remove(keystore);
       await fs.remove(signedApk);
@@ -79,11 +76,16 @@ apksigner sign \
     });
 
   } catch (e) {
-    console.error("❌ Signing error:", e.toString());
+    console.error("Signing error:", e.toString());
+
+    // Cleanup uploaded file and keystore if exist
+    if (await fs.pathExists(apkPath)) await fs.remove(apkPath);
+    if (await fs.pathExists(keystore)) await fs.remove(keystore);
+    if (await fs.pathExists(signedApk)) await fs.remove(signedApk);
+
     res.status(500).send("Signing failed");
   }
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
