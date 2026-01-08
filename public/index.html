@@ -5,14 +5,26 @@
 <title>APK Signer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{margin:0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#2c5364;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);}
-.card{background:#fff;padding:30px;border-radius:12px;max-width:400px;width:90%;box-shadow:0 20px 40px rgba(0,0,0,.3);text-align:center;}
-.card h2{margin-bottom:10px;color:#333;}
-.card p{color:#666;margin-bottom:20px;}
-input[type="file"]{width:100%;padding:12px;border:2px dashed #ccc;border-radius:8px;margin-bottom:20px;cursor:pointer;}
-button{width:100%;padding:14px;font-size:16px;border:none;border-radius:8px;background:#2c5364;color:#fff;cursor:pointer;transition:.3s;}
-button:hover{background:#203a43;}
-#status{margin-top:15px;font-size:14px;color:#333;}
+body {
+  margin:0; font-family:sans-serif;
+  display:flex; justify-content:center; align-items:center; height:100vh;
+  background:#2c5364; background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+}
+.card {
+  background:#fff; padding:30px; border-radius:12px; max-width:400px; width:90%;
+  box-shadow:0 20px 40px rgba(0,0,0,.3); text-align:center;
+}
+.card h2 { margin-bottom:10px; color:#333; }
+.card p { color:#666; margin-bottom:20px; }
+input[type="file"] {
+  width:100%; padding:12px; border:2px dashed #ccc; border-radius:8px; margin-bottom:20px; cursor:pointer;
+}
+button {
+  width:100%; padding:14px; font-size:16px; border:none; border-radius:8px;
+  background:#2c5364; color:#fff; cursor:pointer; transition:.3s;
+}
+button:hover { background:#203a43; }
+#status { margin-top:15px; font-size:14px; color:#333; }
 </style>
 </head>
 <body>
@@ -26,26 +38,26 @@ button:hover{background:#203a43;}
 <div id="status"></div>
 </div>
 <script>
-const form=document.getElementById("form");
-const status=document.getElementById("status");
-const apk=document.getElementById("apk");
+const form = document.getElementById("form");
+const status = document.getElementById("status");
+const apk = document.getElementById("apk");
 
-form.onsubmit=async e=>{
+form.onsubmit = async e => {
   e.preventDefault();
   if(!apk.files[0]) return;
-  status.innerText="⏳ Signing APK...";
-  const fd=new FormData();
-  fd.append("apk",apk.files[0]);
-  try{
-    const r=await fetch("/upload",{method:"POST",body:fd});
-    if(!r.ok){status.innerText="❌ Server error";return;}
-    const b=await r.blob();
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(b);
-    a.download="signed.apk";
+  status.innerText = "⏳ Signing APK...";
+  const fd = new FormData();
+  fd.append("apk", apk.files[0]);
+  try {
+    const r = await fetch("/upload", { method:"POST", body:fd });
+    if(!r.ok) { status.innerText="❌ Server error"; return; }
+    const b = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = "signed.apk";
     a.click();
     status.innerText="✅ Done! APK downloaded";
-  }catch(err){
+  } catch(err) {
     status.innerText="❌ Network error";
   }
 };
