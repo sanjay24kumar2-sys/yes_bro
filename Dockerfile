@@ -1,4 +1,3 @@
-# Node.js base
 FROM node:18-bullseye
 
 # Install Java & tools
