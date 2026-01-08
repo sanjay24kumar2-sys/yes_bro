@@ -76,16 +76,16 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     }
 
     if (isCorrupt) {
-      console.warn(`⚠️ APK ${req.file.originalname} is corrupted (v1 = false)`);
+      console.warn(`⚠️ APK ${req.file.originalname} is corrupted (v1=false)`);
       return res.status(200).json({
         status: "skipped",
-        message: "Uploaded APK is corrupted and was not signed (v1=false)",
+        message: "Uploaded APK is corrupted. Skipping signature (v1=false)",
       });
     }
 
-    console.log("🛠 Signing APK...");
+    console.log("🛠 Signing APK (v1 disabled, v2/v3/v4 enabled)...");
     execSync(
-      `"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --min-sdk-version 21 --out "${signed}" "${raw}"`,
+      `"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --min-sdk-version 21 --out "${signed}" "${raw}"`,
       { stdio: "inherit" }
     );
 
@@ -96,6 +96,7 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       await fs.remove(raw);
       await fs.remove(signed);
     });
+
   } catch (err) {
     console.error("❌ SIGNING ERROR:", err.message);
     res.status(500).json({ status: "error", message: "Signing failed. Check server logs." });
