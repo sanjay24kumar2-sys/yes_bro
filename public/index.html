@@ -46,6 +46,7 @@ form.onsubmit=async e=>{
     a.click();
     status.innerText="✅ Done! APK downloaded";
   }catch(err){
+    console.error(err);
     status.innerText="❌ Network error";
   }
 };

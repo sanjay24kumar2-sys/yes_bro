@@ -1,3 +1,4 @@
+# Node.js base
 FROM node:18-bullseye
 
 # Install Java & tools
@@ -19,6 +20,9 @@ ENV PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/buil
 # Accept licenses & install build-tools
 RUN yes | sdkmanager --licenses
 RUN sdkmanager "build-tools;34.0.0"
+
+# Make apksigner executable
+RUN chmod +x $ANDROID_SDK_ROOT/build-tools/34.0.0/apksigner
 
 # App working directory
 WORKDIR /app

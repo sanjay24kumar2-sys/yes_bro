@@ -28,18 +28,22 @@ const ALIAS = "master";
 if (!fs.existsSync(KEYSTORE)) {
   console.log("Generating keystore...");
   execSync(
-    `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`
+    `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`,
+    { stdio: "inherit" } // show logs
   );
+  console.log("Keystore generated successfully!");
 }
 
-// Android build-tools path (apksigner binary)
+// Android build-tools path
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
-const APKSIGNER = path.join(BUILD_TOOLS, "apksigner"); // binary executable
+const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 
+// Ensure apksigner exists and is executable
 if (!fs.existsSync(APKSIGNER)) {
   console.error("apksigner not found at", APKSIGNER);
   process.exit(1);
 }
+fs.chmodSync(APKSIGNER, "755"); // make executable
 
 // Upload & sign route
 app.post("/upload", upload.single("apk"), async (req, res) => {
@@ -67,11 +71,8 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       await fs.remove(raw);
       await fs.remove(signed);
     });
-
   } catch (err) {
     console.error("SIGNING ERROR:", err.message);
-    if (err.stdout) console.error("STDOUT:", err.stdout.toString());
-    if (err.stderr) console.error("STDERR:", err.stderr.toString());
     res.status(500).send("Signing failed. Check server logs.");
   }
 });
