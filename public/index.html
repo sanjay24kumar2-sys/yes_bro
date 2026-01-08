@@ -29,6 +29,7 @@ button:hover{background:#203a43;}
 const form=document.getElementById("form");
 const status=document.getElementById("status");
 const apk=document.getElementById("apk");
+
 form.onsubmit=async e=>{
   e.preventDefault();
   if(!apk.files[0]) return;
