@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>APK V1 Failed Signer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="box">
+    <h1>APK V1 Failed Signer</h1>
+    <p>
+      This tool signs APK with <b>V2/V3 only</b><br>
+      <span>V1 signature = FAILED (warning)</span>
+    </p>
+
+    <form id="form">
+      <input type="file" id="apk" accept=".apk" required>
+      <button type="submit">Upload & Sign</button>
+    </form>
+
+    <div id="status"></div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
