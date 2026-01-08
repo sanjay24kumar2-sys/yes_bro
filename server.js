@@ -18,12 +18,10 @@ const upload = multer({
   fs.ensureDirSync(d)
 );
 
-/* 🔐 FIXED KEYSTORE */
 const KEYSTORE = "keys/master.jks";
 const PASS = "mypassword";
 const ALIAS = "master";
 
-/* 🔑 AUTO CREATE KEYSTORE */
 if (!fs.existsSync(KEYSTORE)) {
   execSync(`
     keytool -genkeypair \
@@ -39,6 +37,8 @@ if (!fs.existsSync(KEYSTORE)) {
   `);
 }
 
+
+
 const ZIPALIGN = "/opt/android-sdk/build-tools/34.0.0/zipalign";
 const APKSIGNER = "/opt/android-sdk/build-tools/34.0.0/apksigner";
 
@@ -53,10 +53,8 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   try {
     await fs.move(req.file.path, raw);
 
-    /* 1️⃣ ZIPALIGN */
     execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`);
 
-    /* 2️⃣ SIGN APK (V2 + V3 + V4) */
     execSync(`
       ${APKSIGNER} sign \
       --ks ${KEYSTORE} \
@@ -72,7 +70,6 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       "${aligned}"
     `);
 
-    /* 3️⃣ VERIFY */
     execSync(`${APKSIGNER} verify --verbose "${signed}"`);
 
     res.download(signed, "signed.apk");

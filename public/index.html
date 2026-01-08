@@ -1,40 +1,127 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>APK Signer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+*{
+  box-sizing:border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+}
+
+.card{
+  background:#fff;
+  width:100%;
+  max-width:420px;
+  padding:30px;
+  border-radius:12px;
+  box-shadow:0 20px 40px rgba(0,0,0,.3);
+  text-align:center;
+}
+
+.card h2{
+  margin:0 0 10px;
+  color:#333;
+}
+
+.card p{
+  font-size:14px;
+  color:#666;
+  margin-bottom:20px;
+}
+
+input[type="file"]{
+  width:100%;
+  padding:12px;
+  border:2px dashed #ccc;
+  border-radius:8px;
+  margin-bottom:20px;
+  cursor:pointer;
+}
+
+button{
+  width:100%;
+  padding:14px;
+  font-size:16px;
+  border:none;
+  border-radius:8px;
+  background:#2c5364;
+  color:#fff;
+  cursor:pointer;
+  transition:.3s;
+}
+
+button:hover{
+  background:#203a43;
+}
+
+#status{
+  margin-top:15px;
+  font-size:14px;
+  color:#333;
+}
+</style>
+</head>
+
 <body>
-<h3>APK Signer</h3>
 
-<form id="form">
-  <input type="file" id="apk" required />
-  <button>Sign</button>
-</form>
+<div class="card">
+  <h2>APK Signer</h2>
+  <p>Upload APK to sign with V2 + V3 + V4</p>
 
-<p id="status"></p>
+  <form id="form">
+    <input type="file" id="apk" required />
+    <button>Sign APK</button>
+  </form>
+
+  <div id="status"></div>
+</div>
 
 <script>
+const form = document.getElementById("form");
+const status = document.getElementById("status");
+const apk = document.getElementById("apk");
+
 form.onsubmit = async e => {
   e.preventDefault();
   const file = apk.files[0];
   if (!file) return;
 
-  status.innerText = "Signing...";
+  status.innerText = "⏳ Signing APK... please wait";
 
   const fd = new FormData();
   fd.append("apk", file);
 
-  const r = await fetch("/upload", { method: "POST", body: fd });
-  if (!r.ok) {
-    status.innerText = "Server Error ❌";
-    return;
+  try{
+    const r = await fetch("/upload", { method: "POST", body: fd });
+    if (!r.ok) {
+      status.innerText = "❌ Server error";
+      return;
+    }
+
+    const b = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = "signed.apk";
+    a.click();
+
+    status.innerText = "✅ Done! APK downloaded";
+  }catch(err){
+    status.innerText = "❌ Network error";
   }
-
-  const b = await r.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(b);
-  a.download = "signed.apk";
-  a.click();
-
-  status.innerText = "Done ✔";
 };
 </script>
+
 </body>
 </html>
