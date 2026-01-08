@@ -1,7 +1,7 @@
 # Node.js base
 FROM node:18-bullseye
 
-# Install Java & basic tools
+# Install Java & tools
 RUN apt update && apt install -y openjdk-17-jdk wget unzip zip curl git lib32stdc++6 lib32z1 && rm -rf /var/lib/apt/lists/*
 
 # Android SDK root
@@ -21,7 +21,7 @@ ENV PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/buil
 RUN yes | sdkmanager --licenses
 RUN sdkmanager "build-tools;34.0.0"
 
-# Working dir
+# App working directory
 WORKDIR /app
 
 # Copy project

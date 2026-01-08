@@ -32,9 +32,9 @@ if (!fs.existsSync(KEYSTORE)) {
   );
 }
 
-// Android build-tools path
+// Android build-tools path (apksigner binary)
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
-const APKSIGNER = path.join(BUILD_TOOLS, "apksigner"); // executable binary
+const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 
 if (!fs.existsSync(APKSIGNER)) {
   console.error("apksigner not found at", APKSIGNER);
@@ -54,6 +54,7 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     await fs.move(req.file.path, raw);
 
     console.log("Signing APK...");
+    // ⚠️ Corrected: no java -jar, just binary executable
     execSync(
       `"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --min-sdk-version 21 --out "${signed}" "${raw}"`,
       { stdio: "inherit" }
