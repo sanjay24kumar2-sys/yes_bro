@@ -16,7 +16,7 @@ app.use(express.static(path.join(__dirname, "public")));
 // Multer setup (max 100MB)
 const upload = multer({ dest: "uploads_tmp/", limits: { fileSize: 100 * 1024 * 1024 } });
 
-// Ensure directories exist
+// Ensure directories
 ["uploads", "uploads_tmp", "output", "keys"].forEach(d => fs.ensureDirSync(d));
 
 // Keystore config
@@ -27,23 +27,28 @@ const ALIAS = "master";
 // Generate keystore if missing
 if (!fs.existsSync(KEYSTORE)) {
   console.log("Generating keystore...");
-  execSync(
-    `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`,
-    { stdio: "inherit" } // show logs
-  );
-  console.log("Keystore generated successfully!");
+  try {
+    execSync(
+      `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`,
+      { stdio: "inherit" }
+    );
+    console.log("✅ Keystore generated successfully!");
+  } catch (err) {
+    console.error("❌ Keystore generation failed:", err.message);
+    process.exit(1);
+  }
 }
 
 // Android build-tools path
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 
-// Ensure apksigner exists and is executable
+// Ensure apksigner exists and executable
 if (!fs.existsSync(APKSIGNER)) {
-  console.error("apksigner not found at", APKSIGNER);
+  console.error("❌ apksigner not found at", APKSIGNER);
   process.exit(1);
 }
-fs.chmodSync(APKSIGNER, "755"); // make executable
+fs.chmodSync(APKSIGNER, "755");
 
 // Upload & sign route
 app.post("/upload", upload.single("apk"), async (req, res) => {
@@ -58,6 +63,7 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     await fs.move(req.file.path, raw);
 
     console.log("Signing APK...");
+    // ⚠️ Correct binary call, not java -jar
     execSync(
       `"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --min-sdk-version 21 --out "${signed}" "${raw}"`,
       { stdio: "inherit" }
@@ -66,13 +72,14 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     console.log("Verifying APK...");
     execSync(`"${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
 
-    // Send signed APK to user
+    // Send signed APK
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
       await fs.remove(signed);
     });
+
   } catch (err) {
-    console.error("SIGNING ERROR:", err.message);
+    console.error("❌ SIGNING ERROR:", err.message);
     res.status(500).send("Signing failed. Check server logs.");
   }
 });
