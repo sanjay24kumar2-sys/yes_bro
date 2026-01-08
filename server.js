@@ -4,119 +4,116 @@ const multer = require("multer");
 const fs = require("fs-extra");
 const path = require("path");
 const { exec, execSync } = require("child_process");
-const AdmZip = require("adm-zip");
+const ApkReader = require("adbkit-apkreader");
 
 const app = express();
 
-// MAX upload 100 MB
+// static + JSON limits
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
-app.use(express.static(path.join(__dirname,"public")));
+app.use(express.static(path.join(__dirname, "public")));
 
-// Create dirs
-["uploads","uploads_tmp","output","keys","logs"].forEach(d=>fs.ensureDirSync(d));
+// make required dirs
+["uploads","uploads_tmp","output","keys"].forEach(d=>fs.ensureDirSync(d));
 
-// Multer
+// multer
 const upload = multer({ dest:"uploads_tmp/", limits:{ fileSize:50*1024*1024 } });
 
-// Keystore
+// keystore
 const KEYSTORE = path.join(__dirname,"keys/master.jks");
 const PASS="mypassword", ALIAS="master";
+
+// create keystore if missing
 if (!fs.existsSync(KEYSTORE)) {
-  execSync(`keytool -genkeypair -keystore "${KEYSTORE}" -storepass ${PASS} -keypass ${PASS} -alias ${ALIAS} -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=SignerApp,C=IN"`);
+  execSync(
+    `keytool -genkeypair -keystore "${KEYSTORE}" -storepass ${PASS} -keypass ${PASS} -alias ${ALIAS} -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=SignerApp,C=IN"`
+  );
 }
 
+// tools
 const BUILD_TOOLS="/opt/android-sdk/build-tools/34.0.0";
 const APKSIGNER=path.join(BUILD_TOOLS,"apksigner");
 const ZIPALIGN=path.join(BUILD_TOOLS,"zipalign");
 
-// Job store
-const jobs={};
+// job store
+const jobs = {};
 
-// Helper: rebuild minimal structure
-function makeValidStructure(apkPath) {
-  const tmp=apkPath+"_tmp";
-  fs.removeSync(tmp); fs.ensureDirSync(tmp);
-
-  // Try extract anything
-  try { new AdmZip(apkPath).extractAllTo(tmp,true); } catch {}
-
-  // If AndroidManifest.xml missing or bad, write placeholder
-  const man=path.join(tmp,"AndroidManifest.xml");
-  fs.writeFileSync(man,
-    `<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.rebuilt.app">
-      <application android:label="RebuiltApp"></application>
-     </manifest>`);
-
-  // classes.dex placeholder
-  const dexP=path.join(tmp,"classes.dex");
-  const dexHeader=Buffer.from([0x64,0x65,0x78,0x0A,0x30,0x33,0x35,0x00]);
-  fs.writeFileSync(dexP,Buffer.concat([dexHeader,Buffer.alloc(48,0)]));
-
-  // resources.arsc
-  const resP=path.join(tmp,"resources.arsc");
-  fs.writeFileSync(resP,Buffer.from([0,0,0,0]));
-
-  // rezip
-  const zip=new AdmZip();
-  fs.readdirSync(tmp).forEach(f=>{
-    const full=path.join(tmp,f);
-    if (fs.lstatSync(full).isFile()) zip.addFile(f,fs.readFileSync(full));
-  });
-  zip.writeZip(apkPath);
-  fs.removeSync(tmp);
+// extract package name
+async function getPackageName(apkPath){
+  try {
+    const reader = await ApkReader.open(apkPath);
+    const manifest = await reader.readManifest();
+    return manifest.package;
+  } catch {
+    return null;
+  }
 }
 
-// Async sign
-function startSigning(jobId, raw) {
-  jobs[jobId]={status:"processing",logs:[]};
+// async signing background
+function startSigning(jobId, rawPath, originalPackage){
   const aligned=path.join("uploads",`${jobId}_aligned.apk`);
   const signed=path.join("output",`${jobId}_signed.apk`);
 
-  // align + sign
+  jobs[jobId] = { status:"processing", originalPackage };
+
   exec(
-    `"${ZIPALIGN}" -p 4 "${raw}" "${aligned}" && \
+    `"${ZIPALIGN}" -p 4 "${rawPath}" "${aligned}" && \
      "${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" \
        --ks-pass pass:${PASS} --key-pass pass:${PASS} \
        --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
        --out "${signed}" "${aligned}"`,
-    {maxBuffer: 1024*1024*15},
-    (err,stdout,stderr)=>{
-      jobs[jobId].logs.push(stdout||"",stderr||"");
-      if (err) jobs[jobId]={status:"error",error:stderr||err.message,logs:jobs[jobId].logs};
-      else jobs[jobId]={status:"done",download:`/download/${jobId}`,logs:jobs[jobId].logs};
+    { maxBuffer:1024*1024*15 },
+    async(err, stdout, stderr)=>{
+      if(err){
+        jobs[jobId] = { status:"error", error: stderr||err.message };
+      } else {
+        // get output signed package name
+        const newPkg = await getPackageName(signed);
+        jobs[jobId] = {
+          status:"done",
+          originalPackage,
+          signedPackage:newPkg,
+          downloadUrl:`/download/${jobId}`
+        };
+      }
     }
   );
 }
 
-// Upload
-app.post("/upload",upload.single("apk"),async(req,res)=>{
-  if (!req.file) return res.status(400).json({error:"No APK"});
-  const jobId=Date.now().toString();
-  const raw=path.join("uploads",`${jobId}.apk`);
-  await fs.move(req.file.path,raw,{overwrite:true});
+// upload endpoint
+app.post("/upload", upload.single("apk"), async (req,res)=>{
+  if(!req.file) return res.status(400).json({error:"No APK uploaded"});
 
-  makeValidStructure(raw);  // make sure structure valid before sign
-  startSigning(jobId,raw);
+  const jobId = Date.now().toString();
+  const rawPath = path.join("uploads",`${jobId}.apk`);
+  await fs.move(req.file.path, rawPath,{overwrite:true});
 
-  res.json({jobId,message:"Processing"});
+  // get original package
+  const originalPkg = await getPackageName(rawPath);
+
+  // start signing in background
+  startSigning(jobId, rawPath, originalPkg);
+
+  res.json({ jobId, originalPkg, message:"Signing started" });
 });
 
-// Status logs
+// job status
 app.get("/status/:jobId",(req,res)=>{
-  const j=jobs[req.params.jobId];
-  if (!j) return res.status(404).json({status:"not found"});
-  res.json(j);
+  const job = jobs[req.params.jobId];
+  if(!job) return res.status(404).json({status:"not found"});
+  res.json(job);
 });
 
-// Download
+// download
 app.get("/download/:jobId",(req,res)=>{
-  const p=path.join("output",`${req.params.jobId}_signed.apk`);
-  if (!fs.existsSync(p)) return res.status(404).send("not ready");
-  res.download(p,"signed.apk");
+  const file = path.join("output",`${req.params.jobId}_signed.apk`);
+  if(!fs.existsSync(file)) return res.status(404).send("Signing not ready");
+  res.download(file,"signed.apk");
 });
 
-// health
-app.get("/health",(req,res)=>res.json({ok:true}));
+// health check
+app.get("/health",(req,res)=>res.json({status:"ok"}));
 
-app.listen(process.env.PORT||3000,"0.0.0.0",()=>console.log("Running"));
+// start server
+const PORT=process.env.PORT||3000;
+app.listen(PORT,"0.0.0.0",()=>console.log(`Server listening on ${PORT}`));
