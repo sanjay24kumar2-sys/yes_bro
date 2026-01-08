@@ -10,44 +10,62 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(express.static("public"));
 
-const upload = multer({ dest: "uploads_tmp/", limits: { fileSize: 20*1024*1024 } });
-["uploads","uploads_tmp","output","keys"].forEach(d => fs.ensureDirSync(d));
+// Multer setup
+const upload = multer({ dest: "uploads_tmp/", limits: { fileSize: 20 * 1024 * 1024 } });
 
+// Ensure directories exist
+["uploads", "uploads_tmp", "output", "keys"].forEach((dir) => fs.ensureDirSync(dir));
+
+// Keystore setup
 const KEYSTORE = path.resolve(__dirname, "keys/master.jks");
 const PASS = "mypassword";
 const ALIAS = "master";
 
 if (!fs.existsSync(KEYSTORE)) {
+  console.log("Generating keystore...");
   execSync(`keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`);
 }
 
+// Build-tools paths
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
+
+// Ensure executable permissions
 fs.chmodSync(ZIPALIGN, 0o755);
 fs.chmodSync(APKSIGNER, 0o755);
 
-app.post("/upload", upload.single("apk"), async (req,res)=>{
-  if(!req.file) return res.status(400).send("No APK uploaded");
+app.post("/upload", upload.single("apk"), async (req, res) => {
+  if (!req.file) return res.status(400).send("No APK uploaded");
+
   const id = Date.now();
   const raw = path.join("uploads", `${id}.apk`);
   const aligned = path.join("uploads", `aligned_${id}.apk`);
   const signed = path.join("output", `signed_${id}.apk`);
-  try{
+
+  try {
     await fs.move(req.file.path, raw);
-    console.log("Zipalign...");
-    execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`, {stdio:"inherit"});
+
+    console.log("Zipaligning...");
+    execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`, { stdio: "inherit" });
+
     console.log("Signing...");
-    execSync(`${APKSIGNER} sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --min-sdk-version 21 --out "${signed}" "${aligned}"`, {stdio:"inherit"});
+    execSync(`${APKSIGNER} sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --out "${signed}" "${aligned}"`, { stdio: "inherit" });
+
     console.log("Verifying...");
-    execSync(`${APKSIGNER} verify --verbose "${signed}"`, {stdio:"inherit"});
-    res.download(signed,"signed.apk", async ()=>{
-      await fs.remove(raw); await fs.remove(aligned); await fs.remove(signed);
+    execSync(`${APKSIGNER} verify --verbose "${signed}"`, { stdio: "inherit" });
+
+    res.download(signed, "signed.apk", async () => {
+      await fs.remove(raw);
+      await fs.remove(aligned);
+      await fs.remove(signed);
     });
-  }catch(err){
-    console.error("SIGNING ERROR:", err.stdout?.toString(), err.stderr?.toString());
+
+  } catch (err) {
+    console.error("SIGNING ERROR:", err.stdout?.toString(), err.stderr?.toString(), err.message);
     res.status(500).send("Signing failed. Check server logs.");
   }
 });
 
-app.listen(process.env.PORT||3000,()=>console.log("Server running..."));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}...`));

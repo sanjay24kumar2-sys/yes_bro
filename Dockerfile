@@ -1,26 +1,42 @@
+# Use Node.js 18
 FROM node:18-bullseye
 
-RUN apt update && apt install -y openjdk-17-jdk wget unzip zip
+# Install Java, wget, unzip, zip
+RUN apt update && apt install -y openjdk-17-jdk wget unzip zip && rm -rf /var/lib/apt/lists/*
 
+# Set Android SDK root
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
 
-# Download command-line tools
+# Download Android command-line tools
 RUN wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip \
- && unzip commandlinetools-linux-*.zip -d /tmp/cmdline-tools \
- && mv /tmp/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+    -O /tmp/cmdline-tools.zip \
+ && unzip /tmp/cmdline-tools.zip -d /tmp/cmdline-tools \
+ && mkdir -p $ANDROID_SDK_ROOT/cmdline-tools/latest \
+ && mv /tmp/cmdline-tools/cmdline-tools/* $ANDROID_SDK_ROOT/cmdline-tools/latest/
 
-# Correct PATH
+# Set PATH to include SDK tools
 ENV PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/build-tools/34.0.0
 
+# Accept licenses and install build-tools
 RUN yes | sdkmanager --licenses
 RUN sdkmanager "build-tools;34.0.0"
 
+# Set working directory
 WORKDIR /app
+
+# Copy project files
 COPY . .
 
+# Install Node.js dependencies
 RUN npm install
-RUN mkdir -p uploads uploads_tmp output keys
-RUN chmod -R 777 uploads uploads_tmp output keys
 
-CMD ["node","server.js"]
+# Create required directories and give permissions
+RUN mkdir -p uploads uploads_tmp output keys \
+ && chmod -R 777 uploads uploads_tmp output keys
+
+# Expose port
+EXPOSE 3000
+
+# Start server
+CMD ["node", "server.js"]
