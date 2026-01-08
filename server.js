@@ -3,7 +3,7 @@ const multer = require("multer");
 const { execSync } = require("child_process");
 const fs = require("fs-extra");
 const path = require("path");
-const AdmZip = require("adm-zip"); // APK validation
+const AdmZip = require("adm-zip");
 
 const app = express();
 
@@ -46,12 +46,14 @@ if (!fs.existsSync(KEYSTORE)) {
 // Android build-tools
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
+const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 
-if (!fs.existsSync(APKSIGNER)) {
-  console.error("❌ apksigner not found at", APKSIGNER);
+if (!fs.existsSync(APKSIGNER) || !fs.existsSync(ZIPALIGN)) {
+  console.error("❌ apksigner or zipalign not found. Check SDK path!");
   process.exit(1);
 }
 fs.chmodSync(APKSIGNER, "755");
+fs.chmodSync(ZIPALIGN, "755");
 
 // Upload & sign route
 app.post("/upload", upload.single("apk"), async (req, res) => {
@@ -59,14 +61,14 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
 
   const id = Date.now();
   const raw = path.join("uploads", `${id}.apk`);
+  const aligned = path.join("uploads", `aligned_${id}.apk`);
   const signed = path.join("output", `signed_${id}.apk`);
 
   try {
     await fs.move(req.file.path, raw, { overwrite: true });
 
+    // Validate APK
     let isCorrupt = false;
-
-    // Validate APK safely
     try {
       const zip = new AdmZip(raw);
       const manifest = zip.getEntry("AndroidManifest.xml");
@@ -83,17 +85,36 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
       });
     }
 
-    console.log("🛠 Signing APK (v1 disabled, v2/v3/v4 enabled)...");
+    // Step 1: Align APK for proper signing
+    console.log("🛠 Aligning APK for v4 signing...");
+    execSync(`"${ZIPALIGN}" -p 4 "${raw}" "${aligned}"`, { stdio: "inherit" });
+
+    // Step 2: Sign APK with proper v2/v3/v4 logic
+    // v1=false always, v2/v3/v4 enabled for modern devices
+    console.log("🛠 Signing APK (v1=false, v2/v3/v4 enabled)...");
     execSync(
-      `"${APKSIGNER}" sign --ks "${KEYSTORE}" --ks-key-alias "${ALIAS}" --ks-pass pass:${PASS} --key-pass pass:${PASS} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled true --min-sdk-version 21 --out "${signed}" "${raw}"`,
+      `"${APKSIGNER}" sign \
+      --ks "${KEYSTORE}" \
+      --ks-key-alias "${ALIAS}" \
+      --ks-pass pass:${PASS} \
+      --key-pass pass:${PASS} \
+      --v1-signing-enabled false \
+      --v2-signing-enabled true \
+      --v3-signing-enabled true \
+      --v4-signing-enabled true \
+      --min-sdk-version 21 \
+      --out "${signed}" \
+      "${aligned}"`,
       { stdio: "inherit" }
     );
 
     console.log("✅ Verifying APK...");
     execSync(`"${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
 
+    // Send signed APK
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
+      await fs.remove(aligned);
       await fs.remove(signed);
     });
 
