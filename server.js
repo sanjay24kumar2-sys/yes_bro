@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, "public")));
 // Multer setup (max 20MB)
 const upload = multer({
   dest: "uploads_tmp/",
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  limits: { fileSize: 20 * 1024 * 1024 },
 });
 
 // Ensure directories exist
@@ -47,7 +47,6 @@ if (!fs.existsSync(KEYSTORE)) {
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 
-// Ensure apksigner exists
 if (!fs.existsSync(APKSIGNER)) {
   console.error("❌ apksigner not found at", APKSIGNER);
   process.exit(1);
@@ -63,15 +62,25 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const signed = path.join("output", `signed_${id}.apk`);
 
   try {
-    // Move uploaded file
     await fs.move(req.file.path, raw, { overwrite: true });
 
-    // Validate APK
+    let isCorrupt = false;
+
+    // Validate APK safely
     try {
-      new AdmZip(raw); // Will throw if APK is corrupted
+      const zip = new AdmZip(raw);
+      const manifest = zip.getEntry("AndroidManifest.xml");
+      if (!manifest || manifest.header.size === 0) isCorrupt = true;
     } catch {
-      await fs.remove(raw);
-      return res.status(400).send("❌ Uploaded APK is invalid or corrupted");
+      isCorrupt = true;
+    }
+
+    if (isCorrupt) {
+      console.warn(`⚠️ APK ${req.file.originalname} is corrupted (v1 = false)`);
+      return res.status(200).json({
+        status: "skipped",
+        message: "Uploaded APK is corrupted and was not signed (v1=false)",
+      });
     }
 
     console.log("🛠 Signing APK...");
@@ -83,15 +92,13 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     console.log("✅ Verifying APK...");
     execSync(`"${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
 
-    // Send signed APK
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
       await fs.remove(signed);
     });
-
   } catch (err) {
     console.error("❌ SIGNING ERROR:", err.message);
-    res.status(500).send("❌ Signing failed. Check server logs.");
+    res.status(500).json({ status: "error", message: "Signing failed. Check server logs." });
   }
 });
 
