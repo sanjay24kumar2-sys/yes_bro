@@ -10,9 +10,10 @@ RUN wget https://dl.google.com/android/repository/commandlinetools-linux-9477386
  && unzip commandlinetools-linux-*.zip -d /tmp/cmdline-tools \
  && mv /tmp/cmdline-tools/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
 
-# Add to PATH
+# Add build-tools to PATH
 ENV PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/build-tools/34.0.0
 
+# Accept licenses
 RUN yes | sdkmanager --licenses
 RUN sdkmanager "build-tools;34.0.0"
 
