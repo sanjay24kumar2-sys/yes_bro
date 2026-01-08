@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>APK Signer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
 body {
   margin: 0;
@@ -25,11 +26,12 @@ body {
   text-align: center;
   color: #fff;
 }
-h2 {
-  margin-bottom: 15px;
-}
 input[type="file"] {
-  display: none;
+  /* Visually hidden but still accessible */
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .label-file {
   display: inline-block;
@@ -67,19 +69,21 @@ button:hover { background: #367fa9; }
   color: #e0e0e0;
   border: 1px solid #2c3a50;
 }
-.log-entry {
-  margin-bottom: 6px;
-}
 </style>
 </head>
+
 <body>
 
 <div class="container">
   <h2>APK Signer</h2>
-  <label class="label-file" for="apk">Choose APK</label>
+
+  <!-- label triggers input via for/id linking -->
+  <label class="label-file" for="apk">📁 Choose APK</label>
   <input type="file" id="apk" accept=".apk" />
+
   <button id="signBtn">Sign APK</button>
-  <div id="logBox"></div>
+
+  <pre id="logBox"></pre>
 </div>
 
 <script>
@@ -89,56 +93,73 @@ const logBox = document.getElementById("logBox");
 
 let selectedFile = null;
 
-function log(msg){
-  const div = document.createElement("div");
-  div.innerText = msg;
-  logBox.appendChild(div);
+function log(msg) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  logBox.appendChild(line);
   logBox.scrollTop = logBox.scrollHeight;
 }
 
-apkInput.addEventListener("change",()=>{
-  if(apkInput.files[0]){
+apkInput.addEventListener("change", () => {
+  if (apkInput.files.length > 0) {
     selectedFile = apkInput.files[0];
     log(`📂 Selected File: ${selectedFile.name}`);
+  } else {
+    selectedFile = null;
+    log("⚠️ No file selected");
   }
 });
 
-signBtn.addEventListener("click",async()=>{
-  if(!selectedFile){ log("⚠️ Please select an APK first"); return; }
-  log("⏳ Uploading APK...");
-  const fd = new FormData();
-  fd.append("apk",selectedFile);
-
-  const uploadRes = await fetch("/upload",{method:"POST",body:fd});
-  if(!uploadRes.ok){
-    log("❌ Upload failed");
+signBtn.addEventListener("click", async () => {
+  if (!selectedFile) {
+    log("⚠️ Please select an APK first");
     return;
   }
 
-  const {jobId, originalPkg} = await uploadRes.json();
-  log(`🆔 Job Started: ${jobId}`);
-  log(`📦 Original Package: ${originalPkg || "unknown"}`);
+  log("⏳ Uploading APK to server...");
 
-  const interval = setInterval(async()=>{
-    const statusRes = await fetch(`/status/${jobId}`);
-    const job = await statusRes.json();
-    log(`🔎 Status: ${job.status}`);
+  const formData = new FormData();
+  formData.append("apk", selectedFile);
 
-    if(job.status=="done"){
-      log(`✅ Signed Package: ${job.signedPackage}`);
-      clearInterval(interval);
-      log("⬇️ Downloading signed APK...");
-      const a=document.createElement("a");
-      a.href=job.downloadUrl;
-      a.download="signed.apk";
-      a.click();
+  try {
+    const response = await fetch("/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      log(`❌ Server error: ${text}`);
+      return;
     }
-    if(job.status=="error"){
-      log(`❌ Error: ${job.error}`);
-      clearInterval(interval);
-    }
-  },1500);
 
+    const data = await response.json();
+    log(`🆔 Job ID: ${data.jobId}`);
+    log(`📦 Original Package: ${data.originalPkg || "unknown"}`);
+
+    // poll status
+    const interval = setInterval(async () => {
+      const statusRes = await fetch(`/status/${data.jobId}`);
+      const job = await statusRes.json();
+      log(`🔎 Status: ${job.status}`);
+
+      if (job.status === "done") {
+        log(`✅ Signed Package: ${job.signedPackage}`);
+        clearInterval(interval);
+        log("⬇️ Downloading signed APK...");
+        const a = document.createElement("a");
+        a.href = job.downloadUrl;
+        a.download = "signed.apk";
+        a.click();
+      } else if (job.status === "error") {
+        log(`❌ Signing error: ${job.error}`);
+        clearInterval(interval);
+      }
+    }, 1500);
+
+  } catch (err) {
+    log(`❌ Network error: ${err.message}`);
+  }
 });
 </script>
 
