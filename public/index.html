@@ -2,10 +2,12 @@
 <html>
 <body>
 <h3>APK Signer</h3>
+
 <form id="form">
-  <input type="file" id="apk" />
+  <input type="file" id="apk" required />
   <button>Sign</button>
 </form>
+
 <p id="status"></p>
 
 <script>
@@ -18,12 +20,17 @@ form.onsubmit = async e => {
   if(!file) return;
 
   status.innerText = "Signing...";
+
   const fd = new FormData();
   fd.append("apk", file);
 
-  const r = await fetch("/upload",{method:"POST",body:fd});
-  const b = await r.blob();
+  const r = await fetch("/upload", { method:"POST", body: fd });
+  if(!r.ok){
+    status.innerText = "Server error ❌";
+    return;
+  }
 
+  const b = await r.blob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(b);
   a.download = "signed.apk";

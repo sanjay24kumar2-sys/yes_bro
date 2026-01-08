@@ -2,7 +2,7 @@ FROM node:18-bullseye
 
 RUN apt update && apt install -y \
  openjdk-17-jdk \
- wget unzip zipalign
+ wget unzip
 
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
