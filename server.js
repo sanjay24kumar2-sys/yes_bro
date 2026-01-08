@@ -11,37 +11,36 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use(express.static("public"));
 
-// Multer config
+// Multer setup
 const upload = multer({
   dest: "uploads_tmp/",
   limits: { fileSize: 20 * 1024 * 1024 }
 });
 
-// Ensure folders exist
+// Ensure required folders exist
 ["uploads", "uploads_tmp", "output", "keys"].forEach(d => fs.ensureDirSync(d));
 
-// Keystore config
+// Keystore setup
 const KEYSTORE = path.resolve("keys/master.jks");
 const PASS = "mypassword";
 const ALIAS = "master";
 
-// Create keystore if missing
 if (!fs.existsSync(KEYSTORE)) {
-  console.log("Creating master keystore...");
+  console.log("Creating keystore...");
   execSync(
     `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`,
     { stdio: "inherit" }
   );
 }
 
-// Paths to build-tools
+// Build-tools absolute paths
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 
 // Ensure executables
 if (!fs.existsSync(ZIPALIGN) || !fs.existsSync(APKSIGNER)) {
-  console.error("ERROR: zipalign or apksigner not found. Check build-tools.");
+  console.error("zipalign or apksigner not found!");
   process.exit(1);
 }
 fs.chmodSync(ZIPALIGN, 0o755);
@@ -56,10 +55,11 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const signed = path.join("output", `signed_${id}.apk`);
 
   try {
+    // Move uploaded file
     await fs.move(req.file.path, raw);
 
-    console.log("Zipaligning...");
-    execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`);
+    console.log("Zipaligning APK...");
+    execSync(`${ZIPALIGN} -p -f 4 "${raw}" "${aligned}"`, { stdio: "inherit" });
 
     console.log("Signing APK (V2+V3+V4)...");
     const signCmd = `${APKSIGNER} sign \
@@ -75,10 +75,10 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
 --out "${signed}" \
 "${aligned}"`;
     console.log("Command:", signCmd);
-    execSync(signCmd);
+    execSync(signCmd, { stdio: "inherit" });
 
     console.log("Verifying APK...");
-    execSync(`${APKSIGNER} verify --verbose "${signed}"`);
+    execSync(`${APKSIGNER} verify --verbose "${signed}"`, { stdio: "inherit" });
 
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
