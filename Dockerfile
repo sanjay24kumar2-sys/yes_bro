@@ -3,7 +3,7 @@ FROM node:18-bullseye
 # Java install
 RUN apt update && apt install -y openjdk-17-jdk wget unzip
 
-# Android SDK install
+# Android SDK (apksigner)
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
 RUN wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip \
@@ -16,7 +16,7 @@ RUN sdkmanager "build-tools;34.0.0"
 WORKDIR /app
 COPY . .
 
-# ✅ Folders + permissions fix
+# Folders + permissions
 RUN mkdir -p uploads uploads_tmp output keys \
  && chmod -R 777 uploads uploads_tmp output keys
 
