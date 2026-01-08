@@ -3,15 +3,19 @@ const multer = require("multer");
 const { execSync } = require("child_process");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs-extra");
-const path = require("path");
 
 const app = express();
-const upload = multer({ limits: { fileSize: 100 * 1024 * 1024 } });
+
+// ✅ multer disk storage fix
+const upload = multer({
+  dest: "uploads_tmp/",
+  limits: { fileSize: 100 * 1024 * 1024 }
+});
 
 app.use(express.static("public"));
 
 app.post("/upload", upload.single("apk"), async (req, res) => {
-  if (!req.file) return res.status(400).send("No APK uploaded");
+  if (!req.file || !req.file.path) return res.status(400).send("No APK uploaded");
 
   const id = uuidv4();
   const apkPath = `uploads/${id}.apk`;
@@ -23,9 +27,10 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   const alias = "alias";
 
   try {
+    // move from multer tmp folder to permanent uploads folder
     await fs.move(req.file.path, apkPath);
 
-    // 🔑 random keystore
+    // 🔑 generate random keystore
     execSync(`
 keytool -genkeypair \
 -keystore ${keystore} \
@@ -52,6 +57,7 @@ apksigner sign \
 ${apkPath}
     `);
 
+    // send APK download
     res.download(signedApk, "signed.apk", () => {
       fs.remove(apkPath);
       fs.remove(keystore);
@@ -64,6 +70,4 @@ ${apkPath}
   }
 });
 
-app.listen(process.env.PORT || 3000, () =>
-  console.log("Server running")
-);
+app.listen(process.env.PORT || 3000, () => console.log("Server running"));

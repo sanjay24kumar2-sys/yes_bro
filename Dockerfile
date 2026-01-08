@@ -1,7 +1,9 @@
 FROM node:18-bullseye
 
+# Java install
 RUN apt update && apt install -y openjdk-17-jdk wget unzip
 
+# Android SDK install
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
 
@@ -17,7 +19,8 @@ RUN sdkmanager "build-tools;34.0.0"
 WORKDIR /app
 COPY . .
 
-RUN mkdir uploads output keys
+# ✅ folders
+RUN mkdir uploads uploads_tmp output keys
 RUN npm install
 
 CMD ["npm", "start"]
