@@ -1,141 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>APK Signer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<style>
-body {
-  margin: 0;
-  font-family: 'Segoe UI', sans-serif;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  background: #141e30;
-}
-.container {
-  background: #1f2a44;
-  padding: 25px;
-  border-radius: 10px;
-  color: #fff;
-  width: 450px;
-  text-align: center;
-}
-input[type="file"] {
-  display:block;
-  margin: 15px auto;
-}
-button {
-  padding: 12px;
-  border: none;
-  background: #3c8dbc;
-  color: #fff;
-  font-size: 16px;
-  cursor: pointer;
-  border-radius: 6px;
-}
-button:hover {
-  background: #367fa9;
-}
-#logBox {
-  text-align:left;
-  margin-top:12px;
-  height:150px;
-  overflow-y:auto;
-  background:#0f1a2b;
-  padding:10px;
-  border-radius:6px;
-}
-</style>
+  <meta charset="UTF-8">
+  <title>APK V1 Failed Signer</title>
+  <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
+  <div class="box">
+    <h1>APK V1 Failed Signer</h1>
+    <p>
+      This tool signs APK with <b>V2/V3 only</b><br>
+      <span>V1 signature = FAILED (warning)</span>
+    </p>
 
-<div class="container">
-  <h2>APK Signer</h2>
-  <input type="file" id="apk" accept=".apk" />
-  <button id="signBtn">Sign APK</button>
-  <div id="logBox"></div>
-</div>
+    <form id="form">
+      <input type="file" id="apk" accept=".apk" required>
+      <button type="submit">Upload & Sign</button>
+    </form>
 
-<script>
-const apkInput = document.getElementById("apk");
-const signBtn = document.getElementById("signBtn");
-const logBox = document.getElementById("logBox");
+    <div id="status"></div>
+  </div>
 
-// **IMPORTANT: define here so it’s in correct scope**
-let selectedFile = null;
-
-function log(msg) {
-  const line = document.createElement("div");
-  line.textContent = msg;
-  logBox.appendChild(line);
-  logBox.scrollTop = logBox.scrollHeight;
-}
-
-// **Always listen for change event**
-apkInput.addEventListener("change", (event) => {
-  if (event.target.files && event.target.files.length > 0) {
-    selectedFile = event.target.files[0]; // correct file API usage :contentReference[oaicite:1]{index=1}
-    log(`📂 Selected File: ${selectedFile.name}`);
-  } else {
-    selectedFile = null;
-    log("⚠️ No file selected");
-  }
-});
-
-signBtn.addEventListener("click", async () => {
-  if (!selectedFile) {
-    log("⚠️ Please select an APK first");
-    return;
-  }
-  log("⏳ Uploading APK to server...");
-
-  const formData = new FormData();
-  formData.append("apk", selectedFile);
-
-  try {
-    const response = await fetch("/upload", {
-      method: "POST",
-      body: formData
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      log(`❌ Server error: ${text}`);
-      return;
-    }
-
-    const data = await response.json();
-    log(`🆔 Job ID: ${data.jobId}`);
-    log(`📦 Original Package: ${data.originalPkg || "unknown"}`);
-
-    const interval = setInterval(async () => {
-      const statusRes = await fetch(`/status/${data.jobId}`);
-      const job = await statusRes.json();
-      log(`🔎 Status: ${job.status}`);
-
-      if (job.status === "done") {
-        log(`✅ Signed Package: ${job.signedPackage}`);
-        clearInterval(interval);
-        log("⬇️ Downloading signed APK...");
-        const a = document.createElement("a");
-        a.href = job.downloadUrl;
-        a.download = "signed.apk";
-        a.click();
-      } else if (job.status === "error") {
-        log(`❌ Signing error: ${job.error}`);
-        clearInterval(interval);
-      }
-    }, 1500);
-
-  } catch (err) {
-    log(`❌ Network error: ${err.message}`);
-  }
-});
-</script>
-
+  <script src="script.js"></script>
 </body>
 </html>
