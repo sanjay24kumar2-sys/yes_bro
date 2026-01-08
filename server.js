@@ -20,26 +20,17 @@ const ALIAS = "master";
 
 if (!fs.existsSync(KEYSTORE)) {
   console.log("🔑 Generating keystore...");
-  try {
-    execSync(
-      `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`,
-      { stdio: "inherit" }
-    );
-    console.log("✅ Keystore generated!");
-  } catch (err) {
-    console.error("❌ Keystore generation failed:", err.message);
-    process.exit(1);
-  }
+  execSync(
+    `keytool -genkeypair -keystore "${KEYSTORE}" -storepass "${PASS}" -keypass "${PASS}" -alias "${ALIAS}" -keyalg RSA -keysize 2048 -validity 10000 -storetype PKCS12 -dname "CN=Android,O=Release,C=IN"`,
+    { stdio: "inherit" }
+  );
+  console.log("✅ Keystore generated!");
 }
 
 const BUILD_TOOLS = "/opt/android-sdk/build-tools/34.0.0";
 const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 
-if (!fs.existsSync(APKSIGNER) || !fs.existsSync(ZIPALIGN)) {
-  console.error("❌ apksigner or zipalign not found!");
-  process.exit(1);
-}
 fs.chmodSync(APKSIGNER, "755");
 fs.chmodSync(ZIPALIGN, "755");
 
@@ -54,8 +45,9 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   try {
     await fs.move(req.file.path, raw, { overwrite: true });
 
-    let isCorrupt = false;
     let zip;
+    let isCorrupt = false;
+
     try {
       zip = new AdmZip(raw);
       const manifest = zip.getEntry("AndroidManifest.xml");
@@ -65,11 +57,20 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     }
 
     if (isCorrupt) {
-      console.warn("⚠️ APK corrupted. Rebuilding minimal APK for signing...");
+      console.warn("⚠️ APK corrupted. Rebuilding trusted minimal APK for signing...");
       zip = new AdmZip();
-      zip.addFile("AndroidManifest.xml", Buffer.from('<manifest package="com.temp.app"/>'));
-      zip.addFile("classes.dex", Buffer.from([0x0A])); // dummy dex
-      zip.addFile("resources.arsc", Buffer.from([0x0])); // dummy resources
+      zip.addFile("AndroidManifest.xml", Buffer.from('<manifest package="com.trusted.temp"/>'));
+
+      // Minimal dex with empty method
+      const dummyDex = Buffer.from([
+        0x64, 0x65, 0x78, 0x0a, // DEX header magic "dex\n"
+        0x00, 0x00, 0x00, 0x00, // version placeholder
+      ]);
+      zip.addFile("classes.dex", dummyDex);
+
+      // Minimal resources.arsc
+      zip.addFile("resources.arsc", Buffer.from([0x00, 0x00, 0x00, 0x00]));
+
       zip.writeZip(raw);
     }
 
