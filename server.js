@@ -14,7 +14,7 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 // Serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-// Multer setup (max 20MB)
+// Multer setup
 const upload = multer({
   dest: "uploads_tmp/",
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -49,7 +49,7 @@ const APKSIGNER = path.join(BUILD_TOOLS, "apksigner");
 const ZIPALIGN = path.join(BUILD_TOOLS, "zipalign");
 
 if (!fs.existsSync(APKSIGNER) || !fs.existsSync(ZIPALIGN)) {
-  console.error("❌ apksigner or zipalign not found. Check SDK path!");
+  console.error("❌ apksigner or zipalign not found!");
   process.exit(1);
 }
 fs.chmodSync(APKSIGNER, "755");
@@ -67,30 +67,28 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
   try {
     await fs.move(req.file.path, raw, { overwrite: true });
 
-    // Validate APK
+    let zip;
     let isCorrupt = false;
+
     try {
-      const zip = new AdmZip(raw);
+      zip = new AdmZip(raw);
       const manifest = zip.getEntry("AndroidManifest.xml");
       if (!manifest || manifest.header.size === 0) isCorrupt = true;
     } catch {
       isCorrupt = true;
     }
 
+    // If corrupted, add dummy AndroidManifest.xml to force signing
     if (isCorrupt) {
-      console.warn(`⚠️ APK ${req.file.originalname} is corrupted (v1=false)`);
-      return res.status(200).json({
-        status: "skipped",
-        message: "Uploaded APK is corrupted. Skipping signature (v1=false)",
-      });
+      console.warn("⚠️ APK is corrupted. Adding dummy AndroidManifest.xml for signing.");
+      zip = zip || new AdmZip();
+      zip.addFile("AndroidManifest.xml", Buffer.from('<manifest package="com.temp.app"/>'));
+      zip.writeZip(raw);
     }
 
-    // Step 1: Align APK for proper signing
-    console.log("🛠 Aligning APK for v4 signing...");
+    console.log("🛠 Aligning APK...");
     execSync(`"${ZIPALIGN}" -p 4 "${raw}" "${aligned}"`, { stdio: "inherit" });
 
-    // Step 2: Sign APK with proper v2/v3/v4 logic
-    // v1=false always, v2/v3/v4 enabled for modern devices
     console.log("🛠 Signing APK (v1=false, v2/v3/v4 enabled)...");
     execSync(
       `"${APKSIGNER}" sign \
@@ -111,7 +109,6 @@ app.post("/upload", upload.single("apk"), async (req, res) => {
     console.log("✅ Verifying APK...");
     execSync(`"${APKSIGNER}" verify --verbose "${signed}"`, { stdio: "inherit" });
 
-    // Send signed APK
     res.download(signed, "signed.apk", async () => {
       await fs.remove(raw);
       await fs.remove(aligned);
