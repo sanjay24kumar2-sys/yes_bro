@@ -7,7 +7,9 @@ RUN apt update && apt install -y \
 
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
-ENV PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/build-tools/34.0.0
+
+# 🔥 PATH FIX — DO NOT OVERWRITE
+ENV PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/build-tools/34.0.0:$PATH
 
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
 WORKDIR /opt
