@@ -1,12 +1,12 @@
 const express = require("express");
 const multer = require("multer");
 const { exec } = require("child_process");
-const { v4: uuidv4 } = require("uuid");
+const uuidv4 = require("uuid").v4;
 const fs = require("fs-extra");
 const path = require("path");
 
 const app = express();
-const upload = multer({ dest: "uploads/", limits: { fileSize: 100 * 1024 * 1024 } });
+const upload = multer({ dest: "uploads/" });
 
 fs.ensureDirSync("uploads");
 fs.ensureDirSync("output");
@@ -14,77 +14,51 @@ fs.ensureDirSync("keys");
 
 app.use(express.static("public"));
 
-const jobs = {}; // Store job status
+const jobs = {};
 
-// Upload endpoint
+// upload
 app.post("/upload", upload.single("apk"), async (req, res) => {
-  if (!req.file) return res.status(400).send("No APK uploaded");
+  if (!req.file) return res.status(400).send("No file");
 
-  const jobId = uuidv4();
-  jobs[jobId] = { status: "pending", downloadUrl: null, error: null };
+  const id = uuidv4();
+  const apk = `uploads/${id}.apk`;
+  const signed = `output/signed_${id}.apk`;
+  const keystore = `keys/${id}.jks`;
 
-  const apkPath = path.join("uploads", `${jobId}.apk`);
-  const signedApk = path.join("output", `signed_${jobId}.apk`);
-  const keystore = path.join("keys", `${jobId}.jks`);
+  await fs.move(req.file.path, apk);
+  jobs[id] = { status: "signing" };
 
-  const storePass = uuidv4();
-  const keyPass = uuidv4();
-  const alias = "alias";
-
-  await fs.move(req.file.path, apkPath);
-
-  // Process signing asynchronously
   (async () => {
     try {
-      // Generate keystore
-      await new Promise((resolve, reject) => {
-        exec(`keytool -genkeypair -keystore ${keystore} -storepass ${storePass} -keypass ${keyPass} -alias ${alias} -keyalg RSA -keysize 2048 -validity 1000 -dname "CN=RandomSigner,O=Test,C=IN"`, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await run(`keytool -genkeypair -keystore ${keystore} -storepass pass123 -keypass pass123 -alias alias -keyalg RSA -dname "CN=APK"`);
 
-      // Sign APK
-      await new Promise((resolve, reject) => {
-        exec(`apksigner sign --ks ${keystore} --ks-key-alias ${alias} --ks-pass pass:${storePass} --key-pass pass:${keyPass} --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out ${signedApk} ${apkPath}`, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await run(`apksigner sign --ks ${keystore} --ks-pass pass:pass123 --key-pass pass:pass123 --out ${signed} ${apk}`);
 
-      jobs[jobId].status = "done";
-      jobs[jobId].downloadUrl = `/download/${jobId}`;
-
+      jobs[id] = { status: "done", downloadUrl: `/download/${id}` };
     } catch (e) {
-      console.error(e);
-      jobs[jobId].status = "error";
-      jobs[jobId].error = e.toString();
-    } finally {
-      await fs.remove(apkPath);
-      await fs.remove(keystore);
+      jobs[id] = { status: "error", error: e.toString() };
     }
   })();
 
-  res.json({ jobId });
+  res.json({ jobId: id });
 });
 
-// Status endpoint
-app.get("/status/:jobId", (req, res) => {
-  const job = jobs[req.params.jobId];
-  if (!job) return res.status(404).json({ status: "error", error: "Job not found" });
-  res.json(job);
+// status
+app.get("/status/:id", (req, res) => {
+  res.json(jobs[req.params.id] || { status: "unknown" });
 });
 
-app.get("/download/:jobId", (req, res) => {
-  const jobId = req.params.jobId;
-  const signedApk = path.join("output", `signed_${jobId}.apk`);
-  if (!fs.existsSync(signedApk)) return res.status(404).send("File not found");
+// download
+app.get("/download/:id", (req, res) => {
+  const file = `output/signed_${req.params.id}.apk`;
+  if (!fs.existsSync(file)) return res.status(404).send("Not found");
+  res.download(file);
+});
 
-  res.download(signedApk, "signed.apk", async () => {
-    await fs.remove(signedApk);
-    delete jobs[jobId];
+function run(cmd) {
+  return new Promise((ok, err) => {
+    exec(cmd, (e) => (e ? err(e) : ok()));
   });
-});
+}
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(3000, () => console.log("✅ Server running on 3000"));
