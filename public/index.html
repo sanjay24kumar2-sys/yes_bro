@@ -1,44 +1,27 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>APK Signer</title>
-<style>
-body{background:#141e30;color:#fff;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh}
-.box{background:#1f2a44;padding:20px;border-radius:10px;width:400px;text-align:center}
-#log{height:120px;overflow:auto;background:#000;padding:10px;margin-top:10px}
-</style>
-</head>
-<body>
-<div class="box">
-<h2>APK Signer</h2>
-<input type="file" id="apk"><br><br>
-<button onclick="sign()">Sign</button>
-<div id="log"></div>
-</div>
+FROM node:18-bullseye
 
-<script>
-let log = t => document.getElementById("log").innerHTML += t+"<br>";
+RUN apt update && apt install -y \
+  openjdk-17-jdk \
+  wget \
+  unzip
 
-async function sign(){
-  const f=document.getElementById("apk").files[0];
-  if(!f) return log("No file");
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/build-tools/34.0.0
 
-  const fd=new FormData();
-  fd.append("apk",f);
+RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+WORKDIR /opt
 
-  const r=await fetch("/upload",{method:"POST",body:fd});
-  const j=await r.json();
-  log("Job: "+j.jobId);
+RUN wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip \
+ && unzip commandlinetools-linux-9477386_latest.zip \
+ && mv cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
 
-  const i=setInterval(async()=>{
-    const s=await fetch("/status/"+j.jobId).then(r=>r.json());
-    log("Status: "+s.status);
-    if(s.status==="done"){
-      clearInterval(i);
-      window.location=s.downloadUrl;
-    }
-  },1500);
-}
-</script>
-</body>
-</html>
+RUN yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses
+RUN sdkmanager --sdk_root=$ANDROID_SDK_ROOT "build-tools;34.0.0"
+
+WORKDIR /app
+COPY . .
+RUN npm install
+
+EXPOSE 3000
+CMD ["node","server.js"]

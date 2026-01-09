@@ -1,7 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const { exec } = require("child_process");
-const uuidv4 = require("uuid").v4;
+const { v4: uuidv4 } = require("uuid");
 const fs = require("fs-extra");
 const path = require("path");
 
@@ -16,49 +16,74 @@ app.use(express.static("public"));
 
 const jobs = {};
 
-// upload
 app.post("/upload", upload.single("apk"), async (req, res) => {
-  if (!req.file) return res.status(400).send("No file");
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
   const id = uuidv4();
-  const apk = `uploads/${id}.apk`;
-  const signed = `output/signed_${id}.apk`;
-  const keystore = `keys/${id}.jks`;
+  const apk = path.join("uploads", `${id}.apk`);
+  const signed = path.join("output", `signed_${id}.apk`);
+  const keystore = path.join("keys", `${id}.jks`);
 
   await fs.move(req.file.path, apk);
+
   jobs[id] = { status: "signing" };
+  res.json({ jobId: id });
 
   (async () => {
     try {
-      await run(`keytool -genkeypair -keystore ${keystore} -storepass pass123 -keypass pass123 -alias alias -keyalg RSA -dname "CN=APK"`);
+      await run(`
+        keytool -genkeypair -noprompt \
+        -keystore ${keystore} \
+        -storepass pass123 \
+        -keypass pass123 \
+        -alias alias \
+        -keyalg RSA \
+        -keysize 2048 \
+        -validity 10000 \
+        -dname "CN=APK Signer, OU=Dev, O=Test, L=IN, S=IN, C=IN"
+      `);
 
-      await run(`apksigner sign --ks ${keystore} --ks-pass pass:pass123 --key-pass pass:pass123 --out ${signed} ${apk}`);
+      await run(`
+        ${process.env.ANDROID_SDK_ROOT}/build-tools/34.0.0/apksigner sign \
+        --ks ${keystore} \
+        --ks-pass pass:pass123 \
+        --key-pass pass:pass123 \
+        --out ${signed} \
+        ${apk}
+      `);
 
-      jobs[id] = { status: "done", downloadUrl: `/download/${id}` };
+      jobs[id] = {
+        status: "done",
+        downloadUrl: `/download/${id}`
+      };
+
     } catch (e) {
-      jobs[id] = { status: "error", error: e.toString() };
+      jobs[id] = {
+        status: "error",
+        error: e.message
+      };
+      console.error("JOB ERROR:", e.message);
     }
   })();
-
-  res.json({ jobId: id });
 });
 
-// status
 app.get("/status/:id", (req, res) => {
   res.json(jobs[req.params.id] || { status: "unknown" });
 });
 
-// download
 app.get("/download/:id", (req, res) => {
-  const file = `output/signed_${req.params.id}.apk`;
+  const file = path.join("output", `signed_${req.params.id}.apk`);
   if (!fs.existsSync(file)) return res.status(404).send("Not found");
   res.download(file);
 });
 
 function run(cmd) {
-  return new Promise((ok, err) => {
-    exec(cmd, (e) => (e ? err(e) : ok()));
+  return new Promise((resolve, reject) => {
+    exec(cmd, { shell: "/bin/bash" }, (err, stdout, stderr) => {
+      if (err) return reject(new Error(stderr || err.message));
+      resolve(stdout);
+    });
   });
 }
 
-app.listen(3000, () => console.log("✅ Server running on 3000"));
+app.listen(3000, () => console.log("✅ Server running on port 3000"));
