@@ -1,26 +1,196 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>APK V1 Failed Signer</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<title>APK Signer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: #141e30;
+}
+.container {
+  background: #1f2a44;
+  padding: 25px;
+  border-radius: 10px;
+  color: #fff;
+  width: 450px;
+  text-align: center;
+}
+input[type="file"] {
+  display:block;
+  margin: 15px auto;
+}
+button {
+  padding: 12px;
+  border: none;
+  background: #3c8dbc;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+button:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+button:hover:not(:disabled) {
+  background: #367fa9;
+}
+#logBox {
+  text-align:left;
+  margin-top:12px;
+  height:150px;
+  overflow-y:auto;
+  background:#0f1a2b;
+  padding:10px;
+  border-radius:6px;
+  font-size: 14px;
+}
+#progressContainer {
+  margin-top: 12px;
+  background: #0f1a2b;
+  border-radius: 6px;
+  height: 20px;
+  width: 100%;
+  overflow: hidden;
+}
+#progressBar {
+  height: 100%;
+  width: 0;
+  background: #3c8dbc;
+  transition: width 0.3s;
+}
+</style>
 </head>
+
 <body>
-  <div class="box">
-    <h1>APK V1 Failed Signer</h1>
-    <p>
-      This tool signs APK with <b>V2/V3 only</b><br>
-      <span>V1 signature = FAILED (warning)</span>
-    </p>
 
-    <form id="form">
-      <input type="file" id="apk" accept=".apk" required>
-      <button type="submit">Upload & Sign</button>
-    </form>
-
-    <div id="status"></div>
+<div class="container">
+  <h2>APK Signer</h2>
+  <input type="file" id="apk" accept=".apk" />
+  <button id="signBtn">Sign APK</button>
+  
+  <div id="progressContainer">
+    <div id="progressBar"></div>
   </div>
 
-  <script src="script.js"></script>
+  <div id="logBox"></div>
+</div>
+
+<script>
+const apkInput = document.getElementById("apk");
+const signBtn = document.getElementById("signBtn");
+const logBox = document.getElementById("logBox");
+const progressBar = document.getElementById("progressBar");
+
+let selectedFile = null;
+
+function log(msg) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  logBox.appendChild(line);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+// File selection
+apkInput.addEventListener("change", (event) => {
+  if (event.target.files && event.target.files.length > 0) {
+    selectedFile = event.target.files[0];
+    log(`📂 Selected File: ${selectedFile.name}`);
+  } else {
+    selectedFile = null;
+    log("⚠️ No file selected");
+  }
+});
+
+// Sign APK
+signBtn.addEventListener("click", async () => {
+  if (!selectedFile) {
+    log("⚠️ Please select an APK first");
+    return;
+  }
+
+  signBtn.disabled = true;
+  progressBar.style.width = "0%";
+  log("⏳ Uploading APK...");
+
+  const formData = new FormData();
+  formData.append("apk", selectedFile);
+
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/upload", true);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = (e.loaded / e.total) * 100;
+        progressBar.style.width = percent + "%";
+      }
+    };
+
+    xhr.onload = function() {
+      if (xhr.status !== 200) {
+        log(`❌ Server error: ${xhr.responseText}`);
+        signBtn.disabled = false;
+        return;
+      }
+
+      const data = JSON.parse(xhr.responseText);
+      log(`🆔 Job ID: ${data.jobId}`);
+
+      // Poll status
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/status/${data.jobId}`);
+          const job = await res.json();
+          log(`🔎 Status: ${job.status}`);
+
+          if (job.status === "done") {
+            clearInterval(interval);
+            log(`✅ Signed APK ready`);
+            progressBar.style.width = "100%";
+
+            const a = document.createElement("a");
+            a.href = job.downloadUrl;
+            a.download = "signed.apk";
+            a.click();
+
+            signBtn.disabled = false;
+          } else if (job.status === "error") {
+            clearInterval(interval);
+            log(`❌ Error: ${job.error}`);
+            signBtn.disabled = false;
+            progressBar.style.width = "0%";
+          }
+        } catch (err) {
+          clearInterval(interval);
+          log(`❌ Network error: ${err.message}`);
+          signBtn.disabled = false;
+          progressBar.style.width = "0%";
+        }
+      }, 1500);
+    };
+
+    xhr.onerror = function() {
+      log("❌ Upload failed");
+      signBtn.disabled = false;
+    };
+
+    xhr.send(formData);
+
+  } catch (err) {
+    log(`❌ Unexpected error: ${err.message}`);
+    signBtn.disabled = false;
+  }
+});
+</script>
+
 </body>
 </html>
