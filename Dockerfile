@@ -3,12 +3,12 @@ FROM node:18-bullseye
 RUN apt update && apt install -y \
   openjdk-17-jdk \
   wget \
-  unzip
+  unzip \
+  bash
 
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 
-# 🔥 PATH FIX — DO NOT OVERWRITE
 ENV PATH=$JAVA_HOME/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/build-tools/34.0.0:$PATH
 
 RUN mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
@@ -26,4 +26,4 @@ COPY . .
 RUN npm install
 
 EXPOSE 3000
-CMD ["node","server.js"]
+CMD ["node", "server.js"]
